@@ -1094,7 +1094,7 @@ function buildLevelScene(level) {
     stiffness: 0.055,
     damping: 0.015,
     render: {
-      visible: true,
+      visible: false,
       lineWidth: 2,
       strokeStyle: COLORS.white
     }
@@ -1227,8 +1227,7 @@ function spawnProjectile() {
   Body.setStatic(projectile, true);
   game.currentProjectile = projectile;
   game.projectileState = "armed";
-  game.elastic.pointB = { x: 0, y: 0 };
-  game.elastic.bodyB = projectile;
+  attachElasticToProjectile(projectile);
   updateHud();
 }
 
@@ -1299,9 +1298,7 @@ function finishDrag(event) {
   }
 
   Body.setStatic(projectile, false);
-  if (game.elastic) {
-    game.elastic.bodyB = null;
-  }
+  detachElastic();
   Body.setVelocity(projectile, computeLaunchVelocityForPosition(projectile.position));
   Body.setAngularVelocity(projectile, (projectile.velocity.x || 0) * 0.01);
   game.projectileState = "launched";
@@ -1657,7 +1654,7 @@ function updateProjectileLifecycle() {
     now - game.projectileReleasedAt > 90 &&
     distanceFromAnchor > game.metrics.projectileRadius * 4
   ) {
-    game.elastic.bodyB = null;
+    detachElastic();
   }
 
   if (shouldRetireProjectile(projectile, now)) {
@@ -1698,7 +1695,7 @@ function retireProjectile() {
   }
 
   if (game.elastic && game.elastic.bodyB === game.currentProjectile) {
-    game.elastic.bodyB = null;
+    detachElastic();
   }
 
   Composite.remove(world, game.currentProjectile);
@@ -1803,7 +1800,7 @@ function endLevel(isWin) {
   game.dragPointerId = null;
 
   if (game.elastic) {
-    game.elastic.bodyB = null;
+    detachElastic();
   }
 
   if (isWin) {
@@ -1854,6 +1851,30 @@ function getPointerPosition(event) {
     x: (event.clientX - rect.left) * scaleX,
     y: (event.clientY - rect.top) * scaleY
   };
+}
+
+function attachElasticToProjectile(projectile) {
+  if (!game.elastic || !projectile) {
+    return;
+  }
+
+  game.elastic.pointB = { x: 0, y: 0 };
+  game.elastic.bodyB = projectile;
+  if (game.elastic.render) {
+    game.elastic.render.visible = true;
+  }
+}
+
+function detachElastic() {
+  if (!game.elastic) {
+    return;
+  }
+
+  game.elastic.bodyB = null;
+  game.elastic.pointB = { x: game.metrics.anchor.x, y: game.metrics.anchor.y };
+  if (game.elastic.render) {
+    game.elastic.render.visible = false;
+  }
 }
 
 function getDistance(a, b) {
