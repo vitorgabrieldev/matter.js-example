@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DubFlow Game</title>
+  <style>
+    :root {
+      --c1: #BA4DE3;
+      --c2: #8A05BE;
+      --c3: #530082;
+      --c4: #191919;
+      --c5: #f1f1f1;
+      --radius: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--c4);
+      color: var(--c5);
+    }
+
+    body {
+      position: relative;
+    }
+
+    #scene {
+      width: 100vw;
+      height: 100vh;
+      line-height: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      background: var(--c4);
+    }
+
+    #scene canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .hud {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 20;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      pointer-events: none;
+    }
+
+    .hud-stats {
+      display: grid;
+      gap: 10px;
+      width: min(260px, 42vw);
+      pointer-events: auto;
+    }
+
+    .stat-card {
+      display: grid;
+      gap: 4px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 2px solid var(--hud-card-border, var(--c3));
+      background: var(--hud-card-bg, var(--c4));
+      color: var(--hud-card-text, var(--c5));
+      min-height: 76px;
+    }
+
+    .stat-card small {
+      font-size: 13px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: var(--hud-card-label, var(--c1));
+      text-transform: uppercase;
+    }
+
+    .stat-card strong {
+      font-size: 30px;
+      line-height: 1;
+      font-weight: 900;
+    }
+
+    .stat-card strong.small-value {
+      font-size: 24px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      pointer-events: auto;
+    }
+
+    .btn {
+      border: 2px solid var(--c3);
+      background: var(--c5);
+      color: var(--c4);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.12s ease;
+    }
+
+    .btn:hover:not([disabled]) {
+      transform: translateY(-1px);
+    }
+
+    .btn:active:not([disabled]) {
+      transform: translateY(0);
+    }
+
+    .btn.primary {
+      background: var(--c2);
+      color: var(--c5);
+      border-color: var(--c1);
+    }
+
+    .btn.secondary {
+      background: var(--c3);
+      color: var(--c5);
+      border-color: var(--c1);
+    }
+
+    .btn.outline {
+      background: var(--c4);
+      color: var(--c5);
+      border-color: var(--c2);
+    }
+
+    .btn[disabled] {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: var(--c4);
+    }
+
+    .overlay.hidden {
+      display: none;
+    }
+
+    .panel {
+      width: min(760px, 100%);
+      border-radius: 18px;
+      border: 3px solid var(--c3);
+      background: var(--c5);
+      color: var(--c4);
+      padding: 16px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .panel h1,
+    .panel h2 {
+      margin: 0;
+      font-size: 20px;
+      color: var(--c3);
+    }
+
+    .panel p {
+      margin: 0 0 12px;
+      line-height: 1.4;
+      color: var(--c4);
+    }
+
+    .pause-panel {
+      width: min(480px, 100%);
+      display: grid;
+      gap: 12px;
+      justify-items: stretch;
+      border-color: var(--c1);
+    }
+
+    .pause-logo {
+      border: 3px solid var(--c3);
+      border-radius: 16px;
+      background: var(--c4);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      justify-items: center;
+      color: var(--c5);
+    }
+
+    .pause-logo svg {
+      width: 88px;
+      height: 88px;
+      display: block;
+    }
+
+    .logo-title {
+      display: grid;
+      gap: 2px;
+      justify-items: center;
+      text-align: center;
+    }
+
+    .logo-title strong {
+      font-size: 22px;
+      letter-spacing: 0.04em;
+      color: var(--c5);
+    }
+
+    .logo-title span {
+      font-size: 12px;
+      color: var(--c1);
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .pause-actions {
+      display: grid;
+      gap: 8px;
+    }
+
+    .pause-actions .btn {
+      width: 100%;
+      text-align: center;
+      padding: 12px;
+      font-size: 15px;
+    }
+
+    .settings-panel {
+      border: 3px solid var(--c2);
+      border-radius: 14px;
+      padding: 10px;
+      background: var(--c5);
+      color: var(--c4);
+      display: grid;
+      gap: 10px;
+    }
+
+    .settings-panel.hidden {
+      display: none;
+    }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border: 2px solid var(--c3);
+      border-radius: 12px;
+      padding: 10px;
+      background: var(--c5);
+    }
+
+    .settings-row strong {
+      font-size: 14px;
+      color: var(--c3);
+    }
+
+    .settings-row small {
+      display: block;
+      font-size: 12px;
+      color: var(--c4);
+    }
+
+    .level-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .level-card {
+      border: 2px solid var(--c3);
+      border-radius: 12px;
+      background: var(--c3);
+      color: var(--c5);
+      padding: 12px;
+      text-align: left;
+      cursor: pointer;
+      display: grid;
+      gap: 6px;
+      min-height: 128px;
+      align-content: start;
+    }
+
+    .level-card:hover:not([disabled]) {
+      border-color: var(--c1);
+    }
+
+    .level-card[disabled] {
+      background: var(--c4);
+      color: var(--c5);
+      border-color: var(--c3);
+      cursor: not-allowed;
+      opacity: 1;
+    }
+
+    .level-card .num {
+      font-size: 34px;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--c5);
+    }
+
+    .level-card[disabled] .num {
+      color: var(--c1);
+    }
+
+    .level-card .meta {
+      color: var(--c5);
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .level-card[disabled] .meta {
+      color: var(--c5);
+    }
+
+    .level-card .tag {
+      justify-self: start;
+      font-size: 12px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: var(--c4);
+      color: var(--c5);
+      font-weight: 700;
+      border: 1px solid var(--c1);
+    }
+
+    .level-card.completed .tag {
+      background: var(--c1);
+      color: var(--c4);
+    }
+
+    .level-card.current {
+      border-color: var(--c1);
+      background: var(--c2);
+    }
+
+    .panel-footer {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .progress-line {
+      color: var(--c3);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .result-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      border: 2px solid var(--c3);
+      background: var(--c5);
+      color: var(--c3);
+    }
+
+    .result-badge.win {
+      border-color: var(--c1);
+      background: var(--c1);
+      color: var(--c4);
+    }
+
+    .result-badge.lose {
+      border-color: var(--c2);
+      background: var(--c2);
+      color: var(--c5);
+    }
+
+    .result-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 700px) {
+      .hud {
+        top: 8px;
+        left: 8px;
+        right: 8px;
+      }
+
+      .hud-stats {
+        width: min(220px, 56vw);
+      }
+
+      .stat-card {
+        min-height: 62px;
+        padding: 10px 12px;
+      }
+
+      .stat-card strong {
+        font-size: 24px;
+      }
+
+      .stat-card strong.small-value {
+        font-size: 20px;
+      }
+
+      .actions {
+        justify-content: flex-end;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="scene"></div>
+
+  <div class="hud">
+    <div class="hud-stats">
+      <div class="stat-card">
+        <small>Fases</small>
+        <strong id="hudPhase" class="small-value">1 / 5</strong>
+      </div>
+      <div class="stat-card">
+        <small>Blocos</small>
+        <strong id="hudTargets">0</strong>
+      </div>
+      <div class="stat-card">
+        <small>Bolas</small>
+        <strong id="hudShots">0</strong>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="pauseBtn" type="button">Pausar</button>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="pauseOverlay">
+    <div class="panel pause-panel">
+      <div class="pause-logo" aria-label="Logo DubFlow Game">
+        <svg viewBox="0 0 100 100" role="img" aria-hidden="true">
+          <rect x="8" y="8" width="84" height="84" rx="18" fill="#191919" stroke="#BA4DE3" stroke-width="4"></rect>
+          <path d="M22 66 L22 34 L40 34 Q56 34 56 50 Q56 66 40 66 Z" fill="#8A05BE" stroke="#f1f1f1" stroke-width="3"></path>
+          <path d="M44 30 L78 30" stroke="#BA4DE3" stroke-width="6" stroke-linecap="round"></path>
+          <path d="M44 50 L84 50" stroke="#f1f1f1" stroke-width="6" stroke-linecap="round"></path>
+          <path d="M44 70 L72 70" stroke="#530082" stroke-width="6" stroke-linecap="round"></path>
+          <circle cx="80" cy="70" r="8" fill="#BA4DE3" stroke="#191919" stroke-width="3"></circle>
+        </svg>
+        <div class="logo-title">
+          <strong>DubFlow Game</strong>
+          <span>Pause Menu</span>
+        </div>
+      </div>
+
+      <div class="pause-actions">
+        <button class="btn primary" id="pauseResumeBtn" type="button">Continuar</button>
+        <button class="btn secondary" id="pauseSettingsBtn" type="button">Configurações</button>
+        <button class="btn" id="pauseRestartBtn" type="button">Reiniciar</button>
+        <button class="btn outline" id="pauseLevelsBtn" type="button">Fases</button>
+      </div>
+
+      <div class="settings-panel hidden" id="pauseSettingsPanel">
+        <div class="settings-row">
+          <div>
+            <strong>Trajetória</strong>
+            <small>Exibe a simulação tracejada do disparo.</small>
+          </div>
+          <button class="btn secondary" id="toggleTrajectoryBtn" type="button">Ligado</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="phaseMenu">
+    <div class="panel">
+      <div class="panel-header">
+        <h1>DubFlow Game • Fases</h1>
+        <button class="btn outline" id="closeMenuBtn" type="button">Fechar</button>
+      </div>
+      <p>Somente fases desbloqueadas podem ser abertas. O progresso fica salvo no navegador.</p>
+      <div class="level-grid" id="levelGrid"></div>
+      <div class="panel-footer">
+        <div class="progress-line" id="progressText"></div>
+        <button class="btn" id="resetProgressBtn" type="button">Resetar progresso</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="resultOverlay">
+    <div class="panel">
+      <div class="result-badge" id="resultBadge"></div>
+      <h2 id="resultTitle"></h2>
+      <p id="resultText"></p>
+      <div class="result-actions">
+        <button class="btn" id="resultRetryBtn" type="button">Tentar novamente</button>
+        <button class="btn primary" id="resultNextBtn" type="button">Próxima fase</button>
+        <button class="btn outline" id="resultMenuBtn" type="button">Escolher fase</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
+  <script src="./main.js"></script>
+</body>
+</html>
