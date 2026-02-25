@@ -10,6 +10,8 @@ const {
 } = Matter;
 
 const STORAGE_KEY = "matter_slingshot_levels_v1";
+let suppressBeforeUnloadPrompt = false;
+
 const COLORS = {
   violet: "#BA4DE3",
   purple: "#8A05BE",
@@ -274,6 +276,10 @@ const ui = {
   pauseLevelsBtn: document.getElementById("pauseLevelsBtn"),
   pauseSettingsPanel: document.getElementById("pauseSettingsPanel"),
   toggleTrajectoryBtn: document.getElementById("toggleTrajectoryBtn"),
+  bgVolumeRange: document.getElementById("bgVolumeRange"),
+  bgVolumeValue: document.getElementById("bgVolumeValue"),
+  shotVolumeRange: document.getElementById("shotVolumeRange"),
+  shotVolumeValue: document.getElementById("shotVolumeValue"),
   phaseMenu: document.getElementById("phaseMenu"),
   closeMenuBtn: document.getElementById("closeMenuBtn"),
   levelGrid: document.getElementById("levelGrid"),
@@ -300,7 +306,7 @@ const render = Render.create({
     height: viewport.height,
     wireframes: false,
     showAngleIndicator: false,
-    background: COLORS.black,
+    background: "transparent",
     pixelRatio: window.devicePixelRatio || 1
   }
 });
@@ -336,6 +342,14 @@ const game = {
   lastStatusText: ""
 };
 
+const audioState = {
+  background: null,
+  shot: null,
+  unlockedByGesture: false
+};
+
+setupAudio();
+setupBeforeUnloadGuard();
 setupUi();
 setupPointerControls();
 setupEngineLoop();
@@ -366,9 +380,82 @@ Render.lookAt(render, {
 window.addEventListener("resize", () => {
   clearTimeout(window.__matterResizeTimer);
   window.__matterResizeTimer = setTimeout(() => {
+    suppressBeforeUnloadPrompt = true;
     window.location.reload();
   }, 150);
 });
+
+function setupBeforeUnloadGuard() {
+  window.addEventListener("beforeunload", (event) => {
+    if (suppressBeforeUnloadPrompt) {
+      return;
+    }
+
+    event.preventDefault();
+    event.returnValue = "";
+  });
+}
+
+function setupAudio() {
+  const background = new Audio("./sounds/background-sounds.mp3");
+  background.loop = true;
+  background.preload = "auto";
+
+  const shot = new Audio("./sounds/disparo.wav");
+  shot.preload = "auto";
+
+  audioState.background = background;
+  audioState.shot = shot;
+
+  syncAudioSettings();
+  tryStartBackgroundAudio();
+
+  const unlockHandler = () => {
+    audioState.unlockedByGesture = true;
+    tryStartBackgroundAudio();
+  };
+
+  window.addEventListener("pointerdown", unlockHandler, { passive: true });
+  window.addEventListener("keydown", unlockHandler);
+}
+
+function syncAudioSettings() {
+  if (audioState.background) {
+    audioState.background.volume = clamp(game?.settings?.bgMusicVolume ?? 0.45, 0, 1);
+  }
+
+  if (audioState.shot) {
+    audioState.shot.volume = clamp(game?.settings?.shotVolume ?? 0.75, 0, 1);
+  }
+}
+
+function tryStartBackgroundAudio() {
+  if (!audioState.background) {
+    return;
+  }
+
+  if (!audioState.background.paused) {
+    return;
+  }
+
+  audioState.background.play().catch(() => {
+    /* autoplay may be blocked until a user gesture */
+  });
+}
+
+function playShotSound() {
+  if (!audioState.shot) {
+    return;
+  }
+
+  tryStartBackgroundAudio();
+
+  const shot = audioState.shot.cloneNode();
+  shot.volume = clamp(game.settings.shotVolume, 0, 1);
+  shot.play().catch(() => {
+    /* noop */
+  });
+}
 
 function computeSceneMetrics() {
   const width = viewport.width;
@@ -427,6 +514,21 @@ function setupUi() {
     saveProgress();
   });
 
+  ui.bgVolumeRange.addEventListener("input", () => {
+    game.settings.bgMusicVolume = clamp(Number(ui.bgVolumeRange.value) / 100, 0, 1);
+    syncAudioSettings();
+    tryStartBackgroundAudio();
+    updateSettingsUi();
+    saveProgress();
+  });
+
+  ui.shotVolumeRange.addEventListener("input", () => {
+    game.settings.shotVolume = clamp(Number(ui.shotVolumeRange.value) / 100, 0, 1);
+    syncAudioSettings();
+    updateSettingsUi();
+    saveProgress();
+  });
+
   ui.closeMenuBtn.addEventListener("click", closePhaseMenu);
 
   ui.resetProgressBtn.addEventListener("click", () => {
@@ -467,6 +569,7 @@ function setupUi() {
 
   applySettings();
   updateSettingsUi();
+  tryStartBackgroundAudio();
 }
 
 function setupPointerControls() {
@@ -533,6 +636,7 @@ function setupEngineLoop() {
 
 function setupRenderOverlay() {
   Events.on(render, "afterRender", () => {
+    drawSlingshotVisual();
     drawTrajectoryGuide();
   });
 }
@@ -543,15 +647,22 @@ function createDefaultProgress() {
     lastSelectedLevel: 1,
     completed: {},
     settings: {
-      showTrajectory: true
+      showTrajectory: true,
+      bgMusicVolume: 0.45,
+      shotVolume: 0.75
     },
     fresh: true
   };
 }
 
 function normalizeSettings(settings) {
+  const bgMusicVolume = normalizeVolumeSetting(settings?.bgMusicVolume, 0.45);
+  const shotVolume = normalizeVolumeSetting(settings?.shotVolume, 0.75);
+
   return {
-    showTrajectory: settings?.showTrajectory !== false
+    showTrajectory: settings?.showTrajectory !== false,
+    bgMusicVolume,
+    shotVolume
   };
 }
 
@@ -715,6 +826,7 @@ function pauseGame() {
   game.dragPointerId = null;
   updateStatus("Jogo pausado.");
   applySettings();
+  tryStartBackgroundAudio();
   updateHud();
 }
 
@@ -742,10 +854,19 @@ function resumeGame() {
 function updateSettingsUi() {
   ui.toggleTrajectoryBtn.textContent = game.settings.showTrajectory ? "Ligado" : "Desligado";
   ui.toggleTrajectoryBtn.className = `btn ${game.settings.showTrajectory ? "secondary" : "outline"}`;
+
+  const bgPercent = Math.round(clamp(game.settings.bgMusicVolume, 0, 1) * 100);
+  const shotPercent = Math.round(clamp(game.settings.shotVolume, 0, 1) * 100);
+
+  ui.bgVolumeRange.value = String(bgPercent);
+  ui.shotVolumeRange.value = String(shotPercent);
+  ui.bgVolumeValue.textContent = `${bgPercent}%`;
+  ui.shotVolumeValue.textContent = `${shotPercent}%`;
 }
 
 function applySettings() {
   render.canvas.style.cursor = game.isPaused || game.levelState !== "playing" ? "default" : "crosshair";
+  syncAudioSettings();
 }
 
 function getThemeForLevel(levelNumber) {
@@ -757,9 +878,12 @@ function applyPhaseTheme(theme) {
     return;
   }
 
-  document.body.style.background = theme.sceneBg;
-  sceneEl.style.background = theme.sceneBg;
-  render.options.background = theme.sceneBg;
+  render.options.background = "transparent";
+
+  // Keep the stage background dark while preserving each phase hue in the gradient.
+  document.documentElement.style.setProperty("--scene-grad-1", darkenHex(theme.sceneBg, 0.62));
+  document.documentElement.style.setProperty("--scene-grad-2", darkenHex(theme.hudCardBg, 0.48));
+  document.documentElement.style.setProperty("--scene-grad-3", COLORS.black);
 
   document.documentElement.style.setProperty("--hud-card-bg", theme.hudCardBg);
   document.documentElement.style.setProperty("--hud-card-border", theme.hudCardBorder);
@@ -818,7 +942,8 @@ function startLevel(levelNumber) {
   game.currentLevelNumber = levelNumber;
   game.currentLevel = level;
   game.currentTheme = getThemeForLevel(levelNumber);
-  game.levelState = "playing";
+  // Prevent a race where the engine loop runs before targets are built and marks an instant win.
+  game.levelState = "loading";
   game.shotsLimit = level.shots;
   game.shotsRemaining = level.shots;
   game.projectileState = "none";
@@ -831,10 +956,11 @@ function startLevel(levelNumber) {
 
   applyPhaseTheme(game.currentTheme);
   applySettings();
+  tryStartBackgroundAudio();
   buildLevelScene(level);
-  spawnProjectile();
-
   game.targetsRemaining = countRemainingTargets();
+  game.levelState = "playing";
+  spawnProjectile();
   updateStatus("Arraste a bala no estilingue e solte para disparar.");
   updateHud();
   renderLevelGrid();
@@ -860,10 +986,20 @@ function buildLevelScene(level) {
   const m = game.metrics;
   const theme = game.currentTheme;
   const bodies = [];
+  const groundGradient = createVerticalGradient(
+    m.floorY - m.groundHeight / 2,
+    m.floorY + m.groundHeight / 2,
+    lightenOrDarkenHex(theme.ground, 0.12),
+    darkenHex(theme.ground, 0.12)
+  );
 
   const ground = Bodies.rectangle(m.width / 2, m.height - m.groundHeight / 2, m.width, m.groundHeight, {
     isStatic: true,
-    render: { fillStyle: theme.ground }
+    render: {
+      fillStyle: groundGradient,
+      strokeStyle: darkenHex(theme.ground, 0.2),
+      lineWidth: 2
+    }
   });
 
   const leftWall = Bodies.rectangle(-m.wallThickness / 2, m.height / 2, m.wallThickness, m.height * 2, {
@@ -884,19 +1020,19 @@ function buildLevelScene(level) {
   const launchPad = Bodies.rectangle(m.anchor.x, m.anchor.y + 44, 120, 16, {
     isStatic: true,
     angle: -0.25,
-    render: { fillStyle: theme.slingBase }
+    render: { visible: false }
   });
 
   const slingPost = Bodies.rectangle(m.anchor.x - 24, m.anchor.y + 12, 14, 72, {
     isStatic: true,
     angle: -0.08,
-    render: { fillStyle: theme.slingPostA }
+    render: { visible: false }
   });
 
   const slingPost2 = Bodies.rectangle(m.anchor.x + 14, m.anchor.y + 18, 14, 62, {
     isStatic: true,
     angle: 0.14,
-    render: { fillStyle: theme.slingPostB }
+    render: { visible: false }
   });
 
   const markerBodies = createDistanceMarkers(level);
@@ -916,8 +1052,7 @@ function buildLevelScene(level) {
     stiffness: 0.055,
     damping: 0.015,
     render: {
-      strokeStyle: theme.slingBand,
-      lineWidth: 4
+      visible: false
     }
   });
 
@@ -963,7 +1098,12 @@ function createLevelTargets(level) {
       isStatic: true,
       chamfer: { radius: Math.min(10, Math.max(3, theme.blockChamfer)) },
       render: {
-        fillStyle: theme.platform,
+        fillStyle: createVerticalGradient(
+          platformY - platformThickness / 2,
+          platformY + platformThickness / 2,
+          lightenOrDarkenHex(theme.platform, 0.09),
+          darkenHex(theme.platform, 0.1)
+        ),
         strokeStyle: theme.platformStroke,
         lineWidth: 2
       }
@@ -1002,6 +1142,8 @@ function createLevelTargets(level) {
 
 function makeTargetBlock(x, y, w, h) {
   const theme = game.currentTheme;
+  const fillVariant = varyColorSoft(theme.targetFill, x, y, 0.09);
+  const strokeVariant = varyColorSoft(theme.targetStroke, x + 17, y - 11, 0.05);
 
   return Bodies.rectangle(x, y, w, h, {
     chamfer: { radius: theme.blockChamfer },
@@ -1009,8 +1151,8 @@ function makeTargetBlock(x, y, w, h) {
     restitution: 0.06,
     density: 0.0023,
     render: {
-      fillStyle: theme.targetFill,
-      strokeStyle: theme.targetStroke,
+      fillStyle: fillVariant,
+      strokeStyle: strokeVariant,
       lineWidth: theme.blockLineWidth
     }
   });
@@ -1117,6 +1259,7 @@ function finishDrag(event) {
   Body.setAngularVelocity(projectile, (projectile.velocity.x || 0) * 0.01);
   game.projectileState = "launched";
   game.projectileReleasedAt = performance.now();
+  playShotSound();
   game.shotsRemaining = Math.max(0, game.shotsRemaining - 1);
   game.noShotSettleFrames = 0;
 
@@ -1177,6 +1320,111 @@ function drawTrajectoryGuide() {
   }
 
   ctx.restore();
+}
+
+function drawSlingshotVisual() {
+  const ctx = render.context;
+  const m = game.metrics;
+  const theme = game.currentTheme;
+
+  if (!ctx || !m || !theme) {
+    return;
+  }
+
+  const baseCenter = { x: m.anchor.x, y: m.anchor.y + 44 };
+  const leftPost = { x: m.anchor.x - 24, y: m.anchor.y + 12, w: 14, h: 72, angle: -0.08 };
+  const rightPost = { x: m.anchor.x + 14, y: m.anchor.y + 18, w: 14, h: 62, angle: 0.14 };
+  const base = { x: baseCenter.x, y: baseCenter.y, w: 120, h: 16, angle: -0.25 };
+
+  ctx.save();
+
+  drawGradientRoundedRect(ctx, leftPost, {
+    top: lightenOrDarkenHex(theme.slingPostA, 0.08),
+    bottom: darkenHex(theme.slingPostA, 0.12),
+    stroke: lightenOrDarkenHex(theme.slingBand, -0.15),
+    radius: 4
+  });
+
+  drawGradientRoundedRect(ctx, rightPost, {
+    top: lightenOrDarkenHex(theme.slingPostB, 0.08),
+    bottom: darkenHex(theme.slingPostB, 0.12),
+    stroke: lightenOrDarkenHex(theme.slingBand, -0.2),
+    radius: 4
+  });
+
+  drawGradientRoundedRect(ctx, base, {
+    top: lightenOrDarkenHex(theme.slingBase, 0.14),
+    bottom: darkenHex(theme.slingBase, 0.14),
+    stroke: lightenOrDarkenHex(theme.slingBand, -0.25),
+    radius: 6
+  });
+
+  const leftFork = { x: m.anchor.x - 12, y: m.anchor.y - 12 };
+  const rightFork = { x: m.anchor.x + 10, y: m.anchor.y - 10 };
+  const hasPouch = game.elastic && game.elastic.bodyB && game.projectileState === "armed" && game.currentProjectile;
+  const pouch = hasPouch ? game.currentProjectile.position : { x: m.anchor.x - 1, y: m.anchor.y - 10 };
+
+  ctx.lineCap = "round";
+  ctx.strokeStyle = theme.slingBand;
+  ctx.lineWidth = 4;
+  ctx.globalAlpha = hasPouch ? 1 : 0.75;
+  ctx.beginPath();
+  ctx.moveTo(leftFork.x, leftFork.y);
+  ctx.lineTo(pouch.x, pouch.y);
+  ctx.moveTo(rightFork.x, rightFork.y);
+  ctx.lineTo(pouch.x, pouch.y);
+  ctx.stroke();
+
+  ctx.fillStyle = theme.slingBand;
+  ctx.beginPath();
+  ctx.arc(leftFork.x, leftFork.y, 2.5, 0, Math.PI * 2);
+  ctx.arc(rightFork.x, rightFork.y, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (hasPouch) {
+    ctx.fillStyle = darkenHex(theme.slingBand, 0.22);
+    ctx.beginPath();
+    ctx.arc(pouch.x, pouch.y, 3.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawGradientRoundedRect(ctx, rect, colors) {
+  ctx.save();
+  ctx.translate(rect.x, rect.y);
+  ctx.rotate(rect.angle || 0);
+
+  const gradient = ctx.createLinearGradient(0, -rect.h / 2, 0, rect.h / 2);
+  gradient.addColorStop(0, colors.top);
+  gradient.addColorStop(1, colors.bottom);
+
+  ctx.fillStyle = gradient;
+  roundedRectPath(ctx, -rect.w / 2, -rect.h / 2, rect.w, rect.h, colors.radius || 4);
+  ctx.fill();
+
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = colors.stroke;
+  roundedRectPath(ctx, -rect.w / 2, -rect.h / 2, rect.w, rect.h, colors.radius || 4);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function roundedRectPath(ctx, x, y, w, h, r) {
+  const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.arcTo(x + w, y, x + w, y + radius, radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.arcTo(x + w, y + h, x + w - radius, y + h, radius);
+  ctx.lineTo(x + radius, y + h);
+  ctx.arcTo(x, y + h, x, y + h - radius, radius);
+  ctx.lineTo(x, y + radius);
+  ctx.arcTo(x, y, x + radius, y, radius);
+  ctx.closePath();
 }
 
 function simulateTrajectory() {
@@ -1464,8 +1712,89 @@ function normalizeAngle(angle) {
   return normalized;
 }
 
+function createVerticalGradient(y1, y2, colorTop, colorBottom) {
+  if (!render?.context) {
+    return colorTop;
+  }
+
+  const gradient = render.context.createLinearGradient(0, y1, 0, y2);
+  gradient.addColorStop(0, colorTop);
+  gradient.addColorStop(1, colorBottom);
+  return gradient;
+}
+
+function varyColorSoft(baseColor, xSeed, ySeed, strength = 0.08) {
+  const seed = pseudoRandom01(xSeed * 0.73 + ySeed * 1.17);
+  const signed = seed * 2 - 1;
+
+  if (signed >= 0) {
+    return mixHexColors(baseColor, COLORS.white, signed * strength);
+  }
+
+  return mixHexColors(baseColor, COLORS.black, Math.abs(signed) * strength);
+}
+
+function pseudoRandom01(seed) {
+  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function lightenOrDarkenHex(hex, amount) {
+  if (amount >= 0) {
+    return mixHexColors(hex, COLORS.white, amount);
+  }
+
+  return mixHexColors(hex, COLORS.black, Math.abs(amount));
+}
+
+function darkenHex(hex, amount) {
+  return mixHexColors(hex, COLORS.black, amount);
+}
+
+function mixHexColors(hexA, hexB, t) {
+  const a = hexToRgb(hexA);
+  const b = hexToRgb(hexB);
+  const mix = clamp(t, 0, 1);
+
+  const r = Math.round(a.r + (b.r - a.r) * mix);
+  const g = Math.round(a.g + (b.g - a.g) * mix);
+  const bChannel = Math.round(a.b + (b.b - a.b) * mix);
+
+  return rgbToHex(r, g, bChannel);
+}
+
+function hexToRgb(hex) {
+  const normalized = String(hex || "").replace("#", "");
+  const value = normalized.length === 3
+    ? normalized.split("").map((ch) => ch + ch).join("")
+    : normalized;
+
+  return {
+    r: Number.parseInt(value.slice(0, 2), 16) || 0,
+    g: Number.parseInt(value.slice(2, 4), 16) || 0,
+    b: Number.parseInt(value.slice(4, 6), 16) || 0
+  };
+}
+
+function rgbToHex(r, g, b) {
+  return `#${[r, g, b].map((v) => clamp(Math.round(v), 0, 255).toString(16).padStart(2, "0")).join("")}`;
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeVolumeSetting(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  if (parsed > 1 && parsed <= 100) {
+    return clamp(parsed / 100, 0, 1);
+  }
+
+  return clamp(parsed, 0, 1);
 }
 
 function clampVectorMagnitude(vector, maxMagnitude) {

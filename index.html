@@ -11,6 +11,9 @@
       --c3: #530082;
       --c4: #191919;
       --c5: #f1f1f1;
+      --scene-grad-1: #BA4DE3;
+      --scene-grad-2: #8A05BE;
+      --scene-grad-3: #530082;
       --radius: 14px;
     }
 
@@ -24,7 +27,10 @@
       height: 100%;
       overflow: hidden;
       font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      background: var(--c4);
+      background:
+        radial-gradient(circle at 12% 12%, rgba(241, 241, 241, 0.2) 0%, transparent 50%),
+        radial-gradient(circle at 88% 14%, rgba(241, 241, 241, 0.14) 0%, transparent 48%),
+        linear-gradient(160deg, var(--scene-grad-1) 0%, var(--scene-grad-2) 48%, var(--scene-grad-3) 100%);
       color: var(--c5);
     }
 
@@ -39,7 +45,10 @@
       user-select: none;
       -webkit-user-select: none;
       touch-action: none;
-      background: var(--c4);
+      background:
+        radial-gradient(circle at 16% 18%, rgba(241, 241, 241, 0.18) 0%, transparent 44%),
+        radial-gradient(circle at 82% 10%, rgba(241, 241, 241, 0.12) 0%, transparent 46%),
+        linear-gradient(180deg, var(--scene-grad-1) 0%, var(--scene-grad-2) 52%, var(--scene-grad-3) 100%);
     }
 
     #scene canvas {
@@ -285,6 +294,32 @@
       color: var(--c4);
     }
 
+    .settings-row.slider {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .settings-row.slider .control {
+      width: min(260px, 36vw);
+      display: grid;
+      gap: 6px;
+      justify-items: end;
+    }
+
+    .settings-row output {
+      font-weight: 800;
+      font-size: 13px;
+      color: var(--c3);
+    }
+
+    .settings-row input[type="range"] {
+      width: 100%;
+      accent-color: var(--c2);
+      cursor: pointer;
+    }
+
     .level-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -492,6 +527,26 @@
             <small>Exibe a simulação tracejada do disparo.</small>
           </div>
           <button class="btn secondary" id="toggleTrajectoryBtn" type="button">Ligado</button>
+        </div>
+        <div class="settings-row slider">
+          <div>
+            <strong>Volume de Fundo</strong>
+            <small>Música tocando continuamente durante o jogo.</small>
+          </div>
+          <div class="control">
+            <output id="bgVolumeValue">50%</output>
+            <input id="bgVolumeRange" type="range" min="0" max="100" step="1" value="50">
+          </div>
+        </div>
+        <div class="settings-row slider">
+          <div>
+            <strong>Volume do Disparo</strong>
+            <small>Som reproduzido sempre que você lança a bola.</small>
+          </div>
+          <div class="control">
+            <output id="shotVolumeValue">70%</output>
+            <input id="shotVolumeRange" type="range" min="0" max="100" step="1" value="70">
+          </div>
         </div>
       </div>
     </div>
