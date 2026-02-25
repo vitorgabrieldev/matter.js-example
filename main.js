@@ -201,7 +201,7 @@ const LEVEL_THEMES = [
   }
 ];
 
-const LEVELS = [
+const BASE_LEVELS = [
   {
     id: 1,
     name: "Fase 1",
@@ -255,10 +255,100 @@ const LEVELS = [
       { distance: 0.9, rise: 210, platformWidth: 150, cols: 3, rows: 3, palette: 3 }
     ]
   }
-].map((level) => ({
+];
+
+const LEVELS = [...BASE_LEVELS, ...createExtraLevels(15, BASE_LEVELS.length)].map((level) => ({
   ...level,
   totalBlocks: level.groups.reduce((sum, group) => sum + group.cols * group.rows, 0)
 }));
+
+function createExtraLevels(extraCount, startingFrom) {
+  const extraLevels = [];
+  const distanceSets = {
+    3: [0.14, 0.52, 0.88],
+    4: [0.12, 0.38, 0.66, 0.9],
+    5: [0.1, 0.28, 0.5, 0.72, 0.92]
+  };
+  const baseRisesByGroupCount = {
+    3: [34, 140, 70],
+    4: [28, 176, 104, 224],
+    5: [30, 124, 214, 86, 244]
+  };
+  const shapePatterns = [
+    { cols: 4, rows: 2 },
+    { cols: 3, rows: 3 },
+    { cols: 5, rows: 2 },
+    { cols: 4, rows: 3 },
+    { cols: 3, rows: 4 },
+    { cols: 5, rows: 3 },
+    { cols: 4, rows: 4 },
+    { cols: 6, rows: 2 },
+    { cols: 2, rows: 5 },
+    { cols: 5, rows: 4 }
+  ];
+  const difficultyLabels = ["Plus", "Desafio", "Avançada", "Expert", "Elite"];
+
+  for (let index = 0; index < extraCount; index += 1) {
+    const id = startingFrom + index + 1;
+    const tier = index;
+    const groupCount = Math.min(5, 3 + Math.floor(index / 5));
+    const distances = distanceSets[groupCount];
+    const riseBases = baseRisesByGroupCount[groupCount];
+    const riseBoost = Math.min(60, Math.floor(index / 2) * 6);
+    const groups = [];
+
+    for (let groupIndex = 0; groupIndex < groupCount; groupIndex += 1) {
+      const pattern = shapePatterns[(index * 2 + groupIndex) % shapePatterns.length];
+      let cols = pattern.cols;
+      let rows = pattern.rows;
+
+      if (tier >= 5 && groupIndex % 2 === 0) {
+        cols = Math.min(6, cols + 1);
+      }
+
+      if (tier >= 9 && groupIndex === groupCount - 1) {
+        rows = Math.min(5, rows + 1);
+      }
+
+      if (tier >= 12 && groupIndex === 1) {
+        rows = Math.min(5, rows + 1);
+      }
+
+      const platformWidth = Math.min(
+        240,
+        Math.max(135, 96 + cols * 24 + (rows >= 4 ? 16 : 0) + (groupIndex % 2 ? 8 : 0))
+      );
+      const rise = clamp(
+        riseBases[groupIndex] + riseBoost + (groupIndex % 2 ? 10 : 0) - (groupIndex === 0 ? 4 : 0),
+        26,
+        260
+      );
+
+      groups.push({
+        distance: distances[groupIndex],
+        rise,
+        platformWidth,
+        cols,
+        rows,
+        palette: (index + groupIndex) % LEVEL_THEMES.length
+      });
+    }
+
+    const totalBlocks = groups.reduce((sum, group) => sum + group.cols * group.rows, 0);
+    const shots = clamp(Math.ceil(totalBlocks * 0.13) + 2, 6, 11);
+    const difficulty = difficultyLabels[Math.min(difficultyLabels.length - 1, Math.floor(index / 3))];
+
+    extraLevels.push({
+      id,
+      name: `Fase ${id}`,
+      shots,
+      difficulty,
+      groups
+    });
+  }
+
+  return extraLevels;
+}
 
 const viewport = {
   width: window.innerWidth,
@@ -1191,9 +1281,10 @@ function makeTargetBlock(x, y, w, h) {
 
   return Bodies.rectangle(x, y, w, h, {
     chamfer: { radius: theme.blockChamfer },
-    friction: 0.7,
+    friction: 0.55,
+    frictionStatic: 0.38,
     restitution: 0.06,
-    density: 0.0023,
+    density: 0.00145,
     render: {
       fillStyle: fillVariant,
       strokeStyle: strokeVariant,
