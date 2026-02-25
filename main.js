@@ -6,11 +6,13 @@ const {
   Constraint,
   Body,
   Composite,
-  Bodies
+  Bodies,
+  Query
 } = Matter;
 
 const STORAGE_KEY = "matter_slingshot_levels_v1";
 let suppressBeforeUnloadPrompt = false;
+const LAUNCH_POWER_MULTIPLIER = 0.75;
 
 const COLORS = {
   violet: "#BA4DE3",
@@ -274,7 +276,9 @@ const ui = {
   pauseSettingsBtn: document.getElementById("pauseSettingsBtn"),
   pauseRestartBtn: document.getElementById("pauseRestartBtn"),
   pauseLevelsBtn: document.getElementById("pauseLevelsBtn"),
+  pauseActions: document.getElementById("pauseActions"),
   pauseSettingsPanel: document.getElementById("pauseSettingsPanel"),
+  pauseSettingsBackBtn: document.getElementById("pauseSettingsBackBtn"),
   toggleTrajectoryBtn: document.getElementById("toggleTrajectoryBtn"),
   bgVolumeRange: document.getElementById("bgVolumeRange"),
   bgVolumeValue: document.getElementById("bgVolumeValue"),
@@ -492,7 +496,11 @@ function setupUi() {
   });
 
   ui.pauseSettingsBtn.addEventListener("click", () => {
-    togglePauseSettings();
+    openPauseSettingsView();
+  });
+
+  ui.pauseSettingsBackBtn.addEventListener("click", () => {
+    closePauseSettingsView();
   });
 
   ui.pauseRestartBtn.addEventListener("click", () => {
@@ -567,6 +575,29 @@ function setupUi() {
     openPhaseMenu("result");
   });
 
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.repeat) {
+      return;
+    }
+
+    if (!ui.phaseMenu.classList.contains("hidden")) {
+      event.preventDefault();
+      closePhaseMenu();
+      return;
+    }
+
+    if (!ui.pauseOverlay.classList.contains("hidden")) {
+      event.preventDefault();
+      closePauseMenu({ resume: true });
+      return;
+    }
+
+    if (game.levelState === "playing" && !game.isPaused) {
+      event.preventDefault();
+      openPauseMenu();
+    }
+  });
+
   applySettings();
   updateSettingsUi();
   tryStartBackgroundAudio();
@@ -636,8 +667,8 @@ function setupEngineLoop() {
 
 function setupRenderOverlay() {
   Events.on(render, "afterRender", () => {
-    drawSlingshotVisual();
     drawTrajectoryGuide();
+    drawProjectileVisual();
   });
 }
 
@@ -781,12 +812,13 @@ function closePhaseMenu() {
 
 function showPauseMenuOverlay() {
   render.canvas.style.cursor = "default";
+  closePauseSettingsView();
   ui.pauseOverlay.classList.remove("hidden");
 }
 
 function hidePauseMenuOverlay() {
   ui.pauseOverlay.classList.add("hidden");
-  ui.pauseSettingsPanel.classList.add("hidden");
+  closePauseSettingsView();
   applySettings();
 }
 
@@ -810,8 +842,14 @@ function closePauseMenu({ resume } = { resume: true }) {
   }
 }
 
-function togglePauseSettings() {
-  ui.pauseSettingsPanel.classList.toggle("hidden");
+function openPauseSettingsView() {
+  ui.pauseActions.classList.add("hidden");
+  ui.pauseSettingsPanel.classList.remove("hidden");
+}
+
+function closePauseSettingsView() {
+  ui.pauseSettingsPanel.classList.add("hidden");
+  ui.pauseActions.classList.remove("hidden");
 }
 
 function pauseGame() {
@@ -1019,18 +1057,21 @@ function buildLevelScene(level) {
 
   const launchPad = Bodies.rectangle(m.anchor.x, m.anchor.y + 44, 120, 16, {
     isStatic: true,
+    collisionFilter: { mask: 0 },
     angle: -0.25,
     render: { visible: false }
   });
 
   const slingPost = Bodies.rectangle(m.anchor.x - 24, m.anchor.y + 12, 14, 72, {
     isStatic: true,
+    collisionFilter: { mask: 0 },
     angle: -0.08,
     render: { visible: false }
   });
 
   const slingPost2 = Bodies.rectangle(m.anchor.x + 14, m.anchor.y + 18, 14, 62, {
     isStatic: true,
+    collisionFilter: { mask: 0 },
     angle: 0.14,
     render: { visible: false }
   });
@@ -1047,12 +1088,14 @@ function buildLevelScene(level) {
 
   const elastic = Constraint.create({
     pointA: { x: m.anchor.x, y: m.anchor.y },
-    bodyB: null,
+    pointB: { x: 0, y: 0 },
     length: 0.01,
     stiffness: 0.055,
     damping: 0.015,
     render: {
-      visible: false
+      visible: true,
+      lineWidth: 2,
+      strokeStyle: COLORS.white
     }
   });
 
@@ -1166,21 +1209,24 @@ function spawnProjectile() {
   const m = game.metrics;
   const theme = game.currentTheme;
   const projectileRadius = Math.max(12, Math.round(m.projectileRadius * theme.projectileRadiusScale));
-  const projectile = Bodies.circle(m.anchor.x, m.anchor.y, projectileRadius, {
+  const projectile = Bodies.polygon(m.anchor.x, m.anchor.y, 8, projectileRadius, {
     density: 0.004,
     restitution: 0.75,
     friction: 0.006,
     frictionAir: 0.002,
     render: {
-      fillStyle: theme.projectileFill,
-      strokeStyle: theme.projectileStroke,
-      lineWidth: theme.projectileStrokeWidth
+      visible: false,
+      fillStyle: "#9a9a9a",
+      strokeStyle: "#e6e6e6",
+      lineWidth: 2
     }
   });
 
   Composite.add(world, projectile);
+  Body.setStatic(projectile, true);
   game.currentProjectile = projectile;
   game.projectileState = "armed";
+  game.elastic.pointB = { x: 0, y: 0 };
   game.elastic.bodyB = projectile;
   updateHud();
 }
@@ -1210,7 +1256,7 @@ function applyDragToProjectile(pointer) {
 
 function computeLaunchVelocityForPosition(position) {
   const anchor = game.metrics.anchor;
-  const power = game.currentTheme?.launchPower || 0.22;
+  const power = (game.currentTheme?.launchPower || 0.22) * LAUNCH_POWER_MULTIPLIER;
   const velocity = {
     x: (anchor.x - position.x) * power,
     y: (anchor.y - position.y) * power
@@ -1277,7 +1323,8 @@ function drawTrajectoryGuide() {
     game.isPaused ||
     game.levelState !== "playing" ||
     game.projectileState !== "armed" ||
-    !game.currentProjectile
+    !game.currentProjectile ||
+    !game.dragging
   ) {
     return;
   }
@@ -1361,8 +1408,35 @@ function drawSlingshotVisual() {
 
   const leftFork = { x: m.anchor.x - 12, y: m.anchor.y - 12 };
   const rightFork = { x: m.anchor.x + 10, y: m.anchor.y - 10 };
-  const hasPouch = game.elastic && game.elastic.bodyB && game.projectileState === "armed" && game.currentProjectile;
+  const hasPouch = game.projectileState === "armed" && Boolean(game.currentProjectile);
   const pouch = hasPouch ? game.currentProjectile.position : { x: m.anchor.x - 1, y: m.anchor.y - 10 };
+
+  // The custom slingshot is drawn after Matter bodies, so redraw the armed projectile here
+  // to avoid it being hidden behind the posts/base.
+  if (hasPouch && game.currentProjectile.circleRadius) {
+    const projectile = game.currentProjectile;
+    const pr = projectile.circleRadius;
+    const fill = projectile.render?.fillStyle || theme.projectileFill;
+    const stroke = projectile.render?.strokeStyle || theme.projectileStroke;
+    const lineWidth = projectile.render?.lineWidth || 2;
+
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    ctx.arc(projectile.position.x, projectile.position.y, pr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = COLORS.white;
+    ctx.beginPath();
+    ctx.arc(projectile.position.x - pr * 0.25, projectile.position.y - pr * 0.25, pr * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
   ctx.lineCap = "round";
   ctx.strokeStyle = theme.slingBand;
@@ -1386,6 +1460,43 @@ function drawSlingshotVisual() {
     ctx.beginPath();
     ctx.arc(pouch.x, pouch.y, 3.3, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawProjectileVisual() {
+  const body = game.currentProjectile;
+  const ctx = render.context;
+
+  if (!body || !ctx) {
+    return;
+  }
+
+  const fill = body.render?.fillStyle || "#9a9a9a";
+  const stroke = body.render?.strokeStyle || "#e6e6e6";
+  const lineWidth = body.render?.lineWidth || 2;
+
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = lineWidth;
+
+  if (body.vertices && body.vertices.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(body.vertices[0].x, body.vertices[0].y);
+    for (let i = 1; i < body.vertices.length; i += 1) {
+      ctx.lineTo(body.vertices[i].x, body.vertices[i].y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (body.circleRadius) {
+    ctx.beginPath();
+    ctx.arc(body.position.x, body.position.y, body.circleRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   }
 
   ctx.restore();
@@ -1442,30 +1553,34 @@ function simulateTrajectory() {
   const launch = computeLaunchVelocityForPosition(start);
   const points = [];
   const metrics = game.metrics;
+  const collisionBodies = getTrajectoryCollisionBodies();
 
   let x = start.x;
   let y = start.y;
   let vx = launch.x;
   let vy = launch.y;
 
-  const gravityPerStep = (engine.world.gravity.y || 1) * 0.95;
-  const airFactor = Math.max(0.955, 1 - (projectile.frictionAir || 0.002) * 12);
-  const floorY = metrics.floorY - radius;
+  const gravityPerStep = engine.world.gravity.y || 1;
+  const airFactor = Math.max(0.985, 1 - (projectile.frictionAir || 0.002) * 1.5);
+  let previousPoint = { x, y };
 
   for (let i = 0; i < 75; i += 1) {
     x += vx;
     y += vy;
     vy += gravityPerStep;
-    vx *= 0.996;
+    vx *= airFactor;
     vy *= airFactor;
 
-    if (y > floorY) {
-      y = floorY;
-      vy = -vy * 0.32;
-      vx *= 0.86;
+    const nextPoint = { x, y };
+    const rayHits = Query.ray(collisionBodies, previousPoint, nextPoint, Math.max(2, radius * 0.7));
+
+    if (rayHits.length > 0) {
+      points.push(getClosestRayHitPoint(rayHits, previousPoint, nextPoint));
+      break;
     }
 
-    points.push({ x, y });
+    points.push(nextPoint);
+    previousPoint = nextPoint;
 
     if (x < -120 || x > metrics.width + 120 || y > metrics.height + 140 || y < -120) {
       break;
@@ -1477,6 +1592,46 @@ function simulateTrajectory() {
   }
 
   return points;
+}
+
+function getTrajectoryCollisionBodies() {
+  return Composite.allBodies(world).filter((body) => {
+    if (!body || body === game.currentProjectile) {
+      return false;
+    }
+
+    if (body.isSensor) {
+      return false;
+    }
+
+    if (body.collisionFilter && body.collisionFilter.mask === 0) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function getClosestRayHitPoint(rayHits, fromPoint, fallbackPoint) {
+  let bestPoint = fallbackPoint;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const hit of rayHits) {
+    const supportPoints = hit?.supports?.length ? hit.supports : [fallbackPoint];
+    for (const point of supportPoints) {
+      if (!point || typeof point.x !== "number" || typeof point.y !== "number") {
+        continue;
+      }
+
+      const distance = getDistance(fromPoint, point);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestPoint = { x: point.x, y: point.y };
+      }
+    }
+  }
+
+  return bestPoint;
 }
 
 function updateProjectileLifecycle() {

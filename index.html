@@ -170,6 +170,10 @@
       display: none;
     }
 
+    .hidden {
+      display: none !important;
+    }
+
     .panel {
       width: min(760px, 100%);
       border-radius: 18px;
@@ -513,7 +517,7 @@
         </div>
       </div>
 
-      <div class="pause-actions">
+      <div class="pause-actions" id="pauseActions">
         <button class="btn primary" id="pauseResumeBtn" type="button">Continuar</button>
         <button class="btn secondary" id="pauseSettingsBtn" type="button">Configurações</button>
         <button class="btn" id="pauseRestartBtn" type="button">Reiniciar</button>
@@ -521,6 +525,13 @@
       </div>
 
       <div class="settings-panel hidden" id="pauseSettingsPanel">
+        <div class="settings-row">
+          <div>
+            <strong>Configurações</strong>
+            <small>Ajustes de áudio e visual.</small>
+          </div>
+          <button class="btn outline" id="pauseSettingsBackBtn" type="button">Voltar</button>
+        </div>
         <div class="settings-row">
           <div>
             <strong>Trajetória</strong>
