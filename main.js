@@ -12,7 +12,8 @@ const {
 
 const STORAGE_KEY = "matter_slingshot_levels_v1";
 let suppressBeforeUnloadPrompt = false;
-const LAUNCH_POWER_MULTIPLIER = 0.75;
+const BALL_FORCE_MULTIPLIER = 0.78;
+const TRAJECTORY_DISTANCE_MULTIPLIER = 1.85;
 
 const COLORS = {
   violet: "#BA4DE3",
@@ -1256,7 +1257,7 @@ function applyDragToProjectile(pointer) {
 
 function computeLaunchVelocityForPosition(position) {
   const anchor = game.metrics.anchor;
-  const power = (game.currentTheme?.launchPower || 0.22) * LAUNCH_POWER_MULTIPLIER;
+  const power = (game.currentTheme?.launchPower || 0.22) * BALL_FORCE_MULTIPLIER;
   const velocity = {
     x: (anchor.x - position.x) * power,
     y: (anchor.y - position.y) * power
@@ -1557,14 +1558,16 @@ function simulateTrajectory() {
 
   let x = start.x;
   let y = start.y;
-  let vx = launch.x;
-  let vy = launch.y;
+  let vx = launch.x * TRAJECTORY_DISTANCE_MULTIPLIER;
+  let vy = launch.y * TRAJECTORY_DISTANCE_MULTIPLIER;
 
   const gravityPerStep = engine.world.gravity.y || 1;
   const airFactor = Math.max(0.985, 1 - (projectile.frictionAir || 0.002) * 1.5);
   let previousPoint = { x, y };
 
-  for (let i = 0; i < 75; i += 1) {
+  const maxPreviewSteps = Math.max(12, Math.round(75 * Math.max(0.4, TRAJECTORY_DISTANCE_MULTIPLIER)));
+
+  for (let i = 0; i < maxPreviewSteps; i += 1) {
     x += vx;
     y += vy;
     vy += gravityPerStep;
